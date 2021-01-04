@@ -46,6 +46,7 @@
                     "description": "Mode which code is highlighted: 'covered' or 'uncovered'(default)",
                     "enum": [
                         "covered",
+                        "missing",
                         "uncovered"
                     ]
                 }

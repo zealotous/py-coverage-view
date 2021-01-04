@@ -12,14 +12,16 @@ Highlights test covered python code on the editor. This extension uses the resul
 
 The extension requires the following modules on your python environment.
 
-* Install pytest
+* Install pytest and pytest-cov
 ```
-pip install pytest
+pip install pytest pytest-cov
 ```
 
-* Install pytext-cov
+Generate coverage statistics in JSON format
 ```
-pip install pytest-cov
+# Run tests and generate coverage
+pytest --cov=. 
+coverate json --pritty-print
 ```
 
 ## Extension Settings
@@ -33,7 +35,9 @@ This extension contributes the following settings:
 ## Known Issues
 
 TODO:
-
+- Use `missing_lines` and `covered_lines` to highlight covered/uncovered lines.
+- Set coverage.json as a default fallback for coverage files.
+- Generate `coverage json` automatically on .coverage change.
 ## Release Notes
 
 Initial version.  WARNING:  This was created to support  the author's workflow  at work and a means to learn how to create VS Code extensions :D  Please email: rduldulao@salarium.com for suggestions/improvements.

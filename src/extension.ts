@@ -4,6 +4,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { exec } from 'child_process';
+import { posix } from 'path';
+
 
 
 class CoverageStats {
@@ -11,6 +13,7 @@ class CoverageStats {
     public numLines: string;
     public missedLines: string;
     public percentCovered: string;
+
     constructor(lines: Array<any>, numLines: string, missedLines: string, percentCovered: string) {
         this.lines = lines;
         this.numLines = numLines;
@@ -122,18 +125,24 @@ function initCache(cache: { [id: string]: CoverageStats }, decors: { [id: string
         values.forEach(value => {
 
             let content = fs.readFileSync(value.fsPath);
+            let relPath = posix.dirname(value.fsPath);
 
             let x = content.indexOf("{");
             if (x >= 0) {
                 let buffer = content.slice(x);
                 let jsonData = JSON.parse(buffer.toString());
-                processCoverageFileContent(jsonData, cache, decors);
+                processCoverageFileContent(jsonData, cache, decors, relPath);
             }
         });
     });
 }
 
-function processCoverageFileContent(jsonData: any, cache: { [id: string]: CoverageStats }, decors: { [id: string]: vscode.TextEditorDecorationType }) {
+function processCoverageFileContent(
+    jsonData: any,
+    cache: { [id: string]: CoverageStats },
+    decors: { [id: string]: vscode.TextEditorDecorationType },
+    relPath: string
+) {
     if ('arcs' in jsonData) {
         //console.log("Arcs data found.")   
         Object.keys(jsonData.arcs).forEach(
@@ -160,6 +169,35 @@ function processCoverageFileContent(jsonData: any, cache: { [id: string]: Covera
 
             }
         );
+    } else if ('files' in jsonData) {
+        let mode = vscode.workspace.getConfiguration().get("python.coverageView.highlightMode");
+        let linesKey = mode == "covered" ? "executed_lines" : "missing_lines";
+
+        Object.keys(jsonData.files).forEach(
+            key => {
+                let fullPath = key.startsWith('/') ? posix.join(relPath, key) : key;
+
+                let fileStat: any = jsonData.files[key];
+                let lines: any = fileStat[linesKey];
+
+                let summary = fileStat.summary ? fileStat.summary : null;
+                let persentCovered, numLines, missedLines;
+
+                if (summary) {
+                    persentCovered = summary.percent_covered.toString() + '%';
+                    numLines = summary.covered_lines + summary.missing_lines + summary.excluded_lines;
+                    missedLines = summary.missing_lines;
+                } else {
+                    persentCovered = '-%';
+                    numLines = missedLines = '-';
+                }
+
+                let stat = new CoverageStats(lines, numLines, missedLines, persentCovered);
+
+                cache[fullPath] = stat;
+            }
+        );
+
     } else {
         Object.keys(jsonData.lines).forEach(
             key => {
@@ -184,6 +222,8 @@ function getCoverageFilePattern(): string {
 
 function updateCache(cache: { [id: string]: CoverageStats }, uri: vscode.Uri, decors: { [id: string]: vscode.TextEditorDecorationType }) {
     console.log("Updating cache");
+    let relPath = posix.dirname(uri.fsPath);
+
     fs.readFile(uri.fsPath, (err, data) => {
         if (err) {
             console.error(err);
@@ -195,7 +235,7 @@ function updateCache(cache: { [id: string]: CoverageStats }, uri: vscode.Uri, de
         if (x >= 0) {
             let buffer = data.slice(x);
             let jsonData = JSON.parse(buffer.toString());
-            processCoverageFileContent(jsonData, cache, decors);
+            processCoverageFileContent(jsonData, cache, decors, relPath);
         }
     });
     updateOpenedEditors(cache, decors);

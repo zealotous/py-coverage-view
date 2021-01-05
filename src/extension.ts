@@ -23,9 +23,21 @@ class CoverageStats {
 
 }
 
-function getHighlightMode() {
-    return vscode.workspace.getConfiguration().get("python.coverageView.highlightMode");
+
+function getCfg() {
+    return vscode.workspace.getConfiguration()
 }
+
+
+function getHighlightMode() {
+    return getCfg().get("python.coverageView.highlightMode");
+}
+
+
+function getPython() {
+    return getCfg().get("python.pythonPath");
+}
+
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -50,7 +62,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     //TODO: add delete handler
     vscode.window.onDidChangeActiveTextEditor((editor: any) => {
-        if (editor && editor.document.uri.fsPath in workspaceCache) {
+        let unixPath = editor.document.uri.path;
+        if (editor && unixPath in workspaceCache) {
             updateOpenedEditors(workspaceCache, decorCache);
         }
 
@@ -60,34 +73,37 @@ export function activate(context: vscode.ExtensionContext) {
             if ("TOTAL" in workspaceCache) {
                 total = workspaceCache["TOTAL"].percentCovered;
             }
-            let fsPath = editor.document.uri.fsPath;
+            let fileStat = workspaceCache[unixPath];
 
-            if (fsPath in workspaceCache) {
+            if (fileStat) {
                 if (total !== '-') {
-                    total = workspaceCache[fsPath].percentCovered + "   /   " + total + (" (OVERALL)");
+                    total = `${fileStat.percentCovered}  /  ${total}  (OVERALL)`;
                 } else {
-                    total = workspaceCache[fsPath].percentCovered;
+                    total = fileStat.percentCovered;
                 }
-                updateStatusBar(statusBar, workspaceCache[fsPath].numLines, workspaceCache[fsPath].missedLines, total);
+                updateStatusBar(statusBar, fileStat.numLines, fileStat.missedLines, total);
             }
         }
     });
 
     vscode.workspace.onDidChangeTextDocument((ev: any) => {
-        if (!ev.document.fileName.endsWith("py")) {
+        const changedFilePath = ev.document.uri.path;
+        if (!changedFilePath.endsWith(".py")) {
             updateStatusBar(statusBar, "-", "-", "-");
             return;
         }
-        //console.log(ev.document.uri.fsPath + " changed ");
-        let editor = vscode.window.activeTextEditor;
-        if (editor && editor.document.uri.fsPath === ev.document.uri.fsPath) {
-            if (editor && editor.document.uri.fsPath in decorCache) {
-                decorCache[editor.document.uri.fsPath].dispose();
-                delete decorCache[editor.document.uri.fsPath];
+        const editor = vscode.window.activeTextEditor;
+
+        if (editor) {
+            if (editor.document.uri.path === changedFilePath) {
+                if (editor && changedFilePath in decorCache) {
+                    decorCache[changedFilePath].dispose();
+                    delete decorCache[changedFilePath];
+                }
             }
         }
         //remove from cache
-        delete workspaceCache[ev.document.uri.fsPath];
+        delete workspaceCache[changedFilePath];
 
     });
 
@@ -113,7 +129,6 @@ export function activate(context: vscode.ExtensionContext) {
     //init status bar:
     // updateStatusBar(statusBar, "-", "-", "-");    
     runPytestCov(outputChannel, statusBar, workspaceCache);
-
 
 }
 
@@ -185,9 +200,9 @@ function processCoverageFileContent(
 
         Object.keys(jsonData.files).forEach(
             key => {
-                let fullPath = path.isAbsolute(key) ? key : path.join(relPath, key);
+                let unixPath = path.isAbsolute(key) ? key : path.join(relPath, key);
                 // TODO: find a better solution for replacing back slashes with forward slashes
-                fullPath = fullPath.replace(/\\/gi, '/');
+                unixPath = unixPath.replace(/\\/gi, '/');
 
                 let fileStat: any = jsonData.files[key];
                 let lines: any = fileStat[linesKey];
@@ -206,7 +221,7 @@ function processCoverageFileContent(
 
                 let stat = new CoverageStats(lines, numLines, missedLines, persentCovered);
 
-                cache[fullPath] = stat;
+                cache[unixPath] = stat;
             }
         );
 
@@ -368,21 +383,33 @@ function getHighlightDecoration(): vscode.TextEditorDecorationType {
     return decor;
 }
 
-function runPytestCov(outputChannel: vscode.OutputChannel, statusBar: vscode.StatusBarItem, cache: { [id: string]: CoverageStats }) {
+function runPytestCov(
+    outputChannel: vscode.OutputChannel,
+    statusBar: vscode.StatusBarItem,
+    cache: { [id: string]: CoverageStats },
+) {
 
     let folders = vscode.workspace.workspaceFolders;
     if (folders === undefined) {
         outputChannel.append("No folders...");
         return;
     }
-    let rootPath = folders[0].uri.fsPath;
-    let cmd = "cd " + rootPath + " && py.test --cov=. ";
-    if (!rootPath.endsWith("/")) {
-        rootPath += "/";
+    for (let fldr of folders) {
+        runPytestCovInFolder(outputChannel, statusBar, cache, fldr.uri.fsPath);
     }
-    //console.log(cmd)
-    exec(cmd, (err, stdout, stderr) => {
+}
 
+function runPytestCovInFolder(
+    outputChannel: vscode.OutputChannel,
+    statusBar: vscode.StatusBarItem,
+    cache: { [id: string]: CoverageStats },
+    rootPath: string,
+) {
+    const python = getPython();
+
+    let cmd = `cd ${rootPath} && ${python} -m pytest --cov=. `;
+
+    exec(cmd, (err, stdout, stderr) => {
         if (err) {
             outputChannel.append(stderr);
             console.log(stderr);
@@ -391,23 +418,25 @@ function runPytestCov(outputChannel: vscode.OutputChannel, statusBar: vscode.Sta
         }
         let lines = stdout.split("\n");
         lines.forEach(line => {
-            if (line.trim().endsWith("%")) {
-                let items = line.replace(/\s\s+/g, ' ').split(' ');
-                if (items.length !== 4) {
-                    return;
-                }
-                let key = rootPath + items[0]; //the filename
-                if (key in cache) {
-                    let stats = cache[key];
-                    stats.numLines = items[1];
-                    stats.missedLines = items[2];
-                    stats.percentCovered = items[3];
-                    cache[key] = stats;
+            let items = line.replace(/\s\s+/g, ' ').split(' ');
+            // length is 5 report contains Missing column when 'terms-missing' is switched on
+            if (items.length >= 4 && items.length <= 5) {
 
-                } else if (items[0] === "TOTAL") {
-                    cache["TOTAL"] = new CoverageStats(new Array(0), items[1], items[2], items[3]);
-                }
+                let percentCovered = items[3].trim();
 
+                if (percentCovered.endsWith("%")) {
+                    let key = `${rootPath}/${items[0]}`; //the filename
+                    if (key in cache) {
+                        let stats = cache[key];
+                        stats.numLines = items[1];
+                        stats.missedLines = items[2];
+                        stats.percentCovered = percentCovered;
+                    } else if (items[0] === "TOTAL") {
+                        // TODO: report doesn't contain TOTAL if there is only one file
+                        cache["TOTAL"] = new CoverageStats(new Array(0), items[1], items[2], percentCovered);
+                    }
+
+                }
             }
         });
 
@@ -418,14 +447,16 @@ function runPytestCov(outputChannel: vscode.OutputChannel, statusBar: vscode.Sta
             if ("TOTAL" in cache) {
                 total = cache["TOTAL"].percentCovered;
             }
-            let path = activeEditor.document.uri.fsPath;
-            if (path in cache) {
+            let unixPath = activeEditor.document.uri.path;
+            let fileStat = cache[unixPath];
+
+            if (fileStat) {
                 if (total !== '-') {
-                    total = cache[path].percentCovered + "   /   " + total + (" (OVERALL)");
+                    total = fileStat.percentCovered + "   /   " + total + (" (OVERALL)");
                 } else {
-                    total = cache[path].percentCovered;
+                    total = fileStat.percentCovered;
                 }
-                updateStatusBar(statusBar, cache[path].numLines, cache[path].missedLines, total);
+                updateStatusBar(statusBar, fileStat.numLines, fileStat.missedLines, total);
             }
         }
 
@@ -437,6 +468,6 @@ function runPytestCov(outputChannel: vscode.OutputChannel, statusBar: vscode.Sta
 function updateStatusBar(statusBar: vscode.StatusBarItem, total: string, misses: string, percent: string) {
     statusBar.hide();
     let mode = getHighlightMode();
-    statusBar.text = "Highlight: " + mode + "  Current File --  Lines: " + total + "   Misses: " + misses + "   Cover: " + percent;
+    statusBar.text = `Highlight: ${mode} Current File --  Lines: ${total} Misses: "${misses} Cover: ${percent}`;
     statusBar.show();
 }

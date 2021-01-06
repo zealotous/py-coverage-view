@@ -1,10 +1,10 @@
 'use strict';
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import * as fs from 'fs';
 import { exec } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { MODE_COVERED, MODE_MISSING } from './constants';
 
 
@@ -23,14 +23,17 @@ class CoverageStats {
 
 }
 
+type CoverageStatsCache = { [id: string]: CoverageStats };
+type DecorationCache = { [id: string]: vscode.TextEditorDecorationType };
+
 
 function getCfg() {
     return vscode.workspace.getConfiguration()
 }
 
 
-function getHighlightMode() {
-    return getCfg().get("python.coverageView.highlightMode");
+function getHighlightMode(): string {
+    return String(getCfg().get("python.coverageView.highlightMode"));
 }
 
 
@@ -42,8 +45,8 @@ function getPython() {
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-    let workspaceCache: { [id: string]: CoverageStats } = {};
-    let decorCache: { [id: string]: vscode.TextEditorDecorationType } = {};
+    let workspaceCache: CoverageStatsCache = {};
+    let decorCache: DecorationCache = {};
     let outputChannel = vscode.window.createOutputChannel("PyCov-Test");
     let statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
     //initialize
@@ -136,7 +139,7 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
 }
 
-function initCache(cache: { [id: string]: CoverageStats }, decors: { [id: string]: vscode.TextEditorDecorationType }) {
+function initCache(cache: CoverageStatsCache, decors: DecorationCache) {
     console.log("Init cache");
     vscode.workspace.findFiles(getCoverageFilePattern()).then(values => {
         values.forEach(value => {
@@ -156,8 +159,8 @@ function initCache(cache: { [id: string]: CoverageStats }, decors: { [id: string
 
 function processCoverageFileContent(
     jsonData: any,
-    cache: { [id: string]: CoverageStats },
-    decors: { [id: string]: vscode.TextEditorDecorationType },
+    cache: CoverageStatsCache,
+    decors: DecorationCache,
     relPath: string
 ) {
     if ('arcs' in jsonData) {
@@ -166,18 +169,14 @@ function processCoverageFileContent(
             key => {
                 let lines = new Set();
                 let arcs: Array<any> = jsonData.arcs[key];
-                arcs.forEach(
-                    item => {
-                        //get the nums as long as they are not nega
-                        item.forEach(
-                            (subitem: any) => {
-                                if (subitem > 0) {
-                                    lines.add(subitem);
-                                }
-                            }
-                        );
-                    }
-                );
+                arcs.forEach(item => {
+                    //get the nums as long as they are not nega
+                    item.forEach((subitem: any) => {
+                        if (subitem > 0) {
+                            lines.add(subitem);
+                        }
+                    });
+                });
                 if (key in cache) {
                     cache[key].lines = jsonData.lines[key];
                 } else {
@@ -241,14 +240,14 @@ function processCoverageFileContent(
 
 
 function getCoverageFilePattern(): string {
-    const configuredFilename = vscode.workspace.getConfiguration().get("python.coveragepy.file");
+    const configuredFilename = getCfg().get("python.coveragepy.file");
     if (configuredFilename) {
         return "**/" + configuredFilename;
     }
     return "**/.coverage";
 }
 
-function updateCache(cache: { [id: string]: CoverageStats }, uri: vscode.Uri, decors: { [id: string]: vscode.TextEditorDecorationType }) {
+function updateCache(cache: CoverageStatsCache, uri: vscode.Uri, decors: DecorationCache) {
     console.log("Updating cache");
     let relPath = path.dirname(uri.path);
 
@@ -269,7 +268,7 @@ function updateCache(cache: { [id: string]: CoverageStats }, uri: vscode.Uri, de
     updateOpenedEditors(cache, decors);
 }
 
-function getIgnorableLines(editor: any) {
+function getIgnorableLines(document: vscode.TextDocument) {
     //find lines where there are """ at start or end and add them to array of line numbers
     let ignorableLines: Array<number> = [];
 
@@ -277,8 +276,8 @@ function getIgnorableLines(editor: any) {
     let pydoc_detected: boolean = false;
     let pydoc_token: string = "";
 
-    for (let i: number = 0; i < editor.document.lineCount; i++) {
-        let line: string = editor.document.lineAt(i).text;
+    for (let i: number = 0; i < document.lineCount; i++) {
+        let line: string = document.lineAt(i).text;
         line = line.trim();
         console.log(i, line);
         if (line.length === 0) {
@@ -319,66 +318,80 @@ function getIgnorableLines(editor: any) {
     return new Set(ignorableLines);
 }
 
-function updateOpenedEditors(cache: { [id: string]: CoverageStats }, decors: { [id: string]: vscode.TextEditorDecorationType }) {
-    let editors = vscode.window.visibleTextEditors;
+function updateOpenedEditors(cache: CoverageStatsCache, decors: DecorationCache) {
+    const editors = vscode.window.visibleTextEditors;
     if (editors.length === 0) {
         return;
     }
-    let mode = getHighlightMode();
+    const mode = getHighlightMode();
 
-    editors.forEach((editor: any): void => {
-        const filePath = editor.document.uri.path;
+    for (let editor of editors) {
+        if (!editor || !editor.document) {
+            continue
+        }
+
+        const document: vscode.TextDocument = editor.document;
+        const filePath = document.uri.path;
+
         if (filePath in decors) {
             decors[filePath].dispose();
             delete decors[filePath];
         }
-        let ranges: Array<vscode.Range> = [];
 
         if (!(filePath in cache)) {
-            return;
+            continue;
         }
 
-        if (mode === MODE_MISSING) {
-            let lines = cache[filePath].lines;
-            lines.forEach(lineNo => {
-                ranges.push(editor.document.lineAt(lineNo - 1).range);
-            })
-        } else {
-            let ignorableSet = getIgnorableLines(editor)
-            if (mode === MODE_COVERED) {
-                let lines = cache[filePath].lines;
-                lines.forEach(value => {
-                    let lineNo = value - 1;
-                    if (editor && !ignorableSet.has(lineNo)) {
-                        ranges.push(editor.document.lineAt(lineNo).range);
-                    }
-                });
-            } else {
-                // uncovered mode
-                let rlines = new Set(Array.from(Array(editor.document.lineCount).keys()));
-                let lines = cache[filePath].lines;
-                lines.forEach(value => {
-                    rlines.delete(value - 1);
-                });
-                rlines.forEach(value => {
-                    if (editor && !ignorableSet.has(value)) {
-                        ranges.push(editor.document.lineAt(value).range);
-                    }
-                });
-            }
-        }
+        const decor = getHighlightDecoration();
 
-        let decor = getHighlightDecoration();
-        editor.setDecorations(decor, ranges);
+        editor.setDecorations(
+            decor, calcHighlightRanges(mode, cache[filePath], document)
+        );
         decors[filePath] = decor;
-    });
-
+    }
 }
 
 
+function calcHighlightRanges(
+    mode: string, fileStat: CoverageStats, document: vscode.TextDocument
+): Array<vscode.Range> {
+    const lines = fileStat.lines;
+    const ranges: Array<vscode.Range> = [];
+
+    if (mode === MODE_MISSING) {
+        lines.forEach(lineNo => {
+            ranges.push(document.lineAt(lineNo - 1).range);
+        });
+    } else {
+        const ignorableSet = getIgnorableLines(document);
+
+        if (mode === MODE_COVERED) {
+            lines.forEach(value => {
+                let lineNo = value - 1;
+                if (!ignorableSet.has(lineNo)) {
+                    ranges.push(document.lineAt(lineNo).range);
+                }
+            });
+        } else {
+            // uncovered mode
+            let rlines = new Set(Array.from(Array(document.lineCount).keys()));
+
+            lines.forEach(value => {
+                rlines.delete(value - 1);
+            });
+            rlines.forEach(value => {
+                if (!ignorableSet.has(value)) {
+                    ranges.push(document.lineAt(value).range);
+                }
+            });
+        }
+    }
+    return ranges;
+}
+
 function getHighlightDecoration(): vscode.TextEditorDecorationType {
     let decor = vscode.window.createTextEditorDecorationType(
-        { backgroundColor: vscode.workspace.getConfiguration().get("python.coverageView.highlight") }
+        { backgroundColor: getCfg().get("python.coverageView.highlight") }
     );
     return decor;
 }
@@ -386,7 +399,7 @@ function getHighlightDecoration(): vscode.TextEditorDecorationType {
 function runPytestCov(
     outputChannel: vscode.OutputChannel,
     statusBar: vscode.StatusBarItem,
-    cache: { [id: string]: CoverageStats },
+    cache: CoverageStatsCache,
 ) {
 
     let folders = vscode.workspace.workspaceFolders;
@@ -402,7 +415,7 @@ function runPytestCov(
 function runPytestCovInFolder(
     outputChannel: vscode.OutputChannel,
     statusBar: vscode.StatusBarItem,
-    cache: { [id: string]: CoverageStats },
+    cache: CoverageStatsCache,
     rootPath: string,
 ) {
     const python = getPython();
@@ -452,7 +465,7 @@ function runPytestCovInFolder(
 
             if (fileStat) {
                 if (total !== '-') {
-                    total = fileStat.percentCovered + "   /   " + total + (" (OVERALL)");
+                    total = `${fileStat.percentCovered} / ${total} (OVERALL)`;
                 } else {
                     total = fileStat.percentCovered;
                 }
@@ -468,6 +481,6 @@ function runPytestCovInFolder(
 function updateStatusBar(statusBar: vscode.StatusBarItem, total: string, misses: string, percent: string) {
     statusBar.hide();
     let mode = getHighlightMode();
-    statusBar.text = `Highlight: ${mode} Current File --  Lines: ${total} Misses: "${misses} Cover: ${percent}`;
+    statusBar.text = `Highlight: ${mode} Current File -- Lines: ${total} Misses: ${misses} Cover: ${percent}`;
     statusBar.show();
 }

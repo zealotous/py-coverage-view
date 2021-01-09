@@ -33,7 +33,13 @@ export class PythonTestCoverageTaskProvider implements vscode.TaskProvider {
         if (task) {
             // resolveTask requires that the same definition object be used.
             const definition: PythonTestCoverageTaskDefinition = <any>_task.definition;
-            return new vscode.Task(definition, _task.scope ?? vscode.TaskScope.Workspace, definition.task, 'pythontestcoverage', new vscode.ShellExecution(`pythontestcoverage ${definition.task}`));
+            return new vscode.Task(
+                definition,
+                _task.scope ?? vscode.TaskScope.Workspace,
+                definition.task,
+                'pythontestcoverage',
+                new vscode.ShellExecution(`pythontestcoverage ${definition.task}`),
+            );
         }
         return undefined;
     }
@@ -135,7 +141,13 @@ async function getPythonTestCoverageTasks(): Promise<vscode.Task[]> {
                             type: 'pythontestcoverage',
                             task: taskName
                         };
-                        const task = new vscode.Task(kind, workspaceFolder, taskName, 'pythontestcoverage', new vscode.ShellExecution(`pythontestcoverage ${taskName}`));
+                        const task = new vscode.Task(
+                            kind,
+                            workspaceFolder,
+                            taskName,
+                            'pythontestcoverage',
+                            new vscode.ShellExecution(`pythontestcoverage ${taskName}`)
+                        );
                         result.push(task);
                         const lowerCaseLine = line.toLowerCase();
                         if (isBuildTask(lowerCaseLine)) {

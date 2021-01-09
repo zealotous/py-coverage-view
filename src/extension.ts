@@ -85,6 +85,8 @@ export function activate(context: vscode.ExtensionContext) {
                     total = fileStat.percentCovered;
                 }
                 updateStatusBar(statusBar, fileStat.numLines, fileStat.missedLines, total);
+            } else {
+                updateStatusBar(statusBar);
             }
         }
     });
@@ -130,7 +132,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(outputChannel);
 
     //init status bar:
-    // updateStatusBar(statusBar, "-", "-", "-");    
+    updateStatusBar(statusBar, "-", "-", "-");
     runPytestCov(outputChannel, statusBar, workspaceCache);
 
 }
@@ -470,6 +472,8 @@ function runPytestCovInFolder(
                     total = fileStat.percentCovered;
                 }
                 updateStatusBar(statusBar, fileStat.numLines, fileStat.missedLines, total);
+            } else {
+                updateStatusBar(statusBar);
             }
         }
 
@@ -478,7 +482,12 @@ function runPytestCovInFolder(
 }
 
 
-function updateStatusBar(statusBar: vscode.StatusBarItem, total: string, misses: string, percent: string) {
+function updateStatusBar(
+    statusBar: vscode.StatusBarItem,
+    total: string = '-',
+    misses: string = '-',
+    percent: string = '-'
+) {
     statusBar.hide();
     let mode = getHighlightMode();
     statusBar.text = `Highlight: ${mode} Current File -- Lines: ${total} Misses: ${misses} Cover: ${percent}`;

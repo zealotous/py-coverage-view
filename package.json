@@ -2,7 +2,7 @@
     "name": "py-coverage-view",
     "displayName": "py-coverage-view",
     "description": "Displays (Python) code coverage results on the editor.",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "publisher": "rduldulao",
     "homepage": "https://github.com/rduldulao/py-coverage-view",
     "repository": {
@@ -20,15 +20,13 @@
     ],
     "main": "./out/extension",
     "contributes": {
-        "commands": [
-            {
-                "command": "pycoveragedisplay.runPytestCov",
-                "title": "Python: Run Pycov-test"
-            }
-        ],
+        "commands": [{
+            "command": "pycoveragedisplay.runPytestCov",
+            "title": "Python: Run Pycov-test"
+        }],
         "configuration": {
             "type": "object",
-            "title": "PyTest-Cov Editor Highlighter",
+            "title": "Coverage.py Editor Highlighter",
             "properties": {
                 "python.coveragepy.file": {
                     "type": "string",
@@ -42,8 +40,8 @@
                 },
                 "python.coverageView.highlightMode": {
                     "type": "string",
-                    "default": "uncovered",
-                    "description": "Mode which code is highlighted: 'covered' or 'uncovered'(default)",
+                    "default": "missing",
+                    "description": "Mode which code is highlighted: 'covered', 'uncovered' or 'missing'(default)",
                     "enum": [
                         "covered",
                         "missing",

@@ -49,7 +49,24 @@
                     ]
                 }
             }
-        }
+        },
+        "taskDefinitions": [{
+            "type": "python-test-coverage",
+            "required": [
+                "task"
+            ],
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "The python-test-coverage task to customize"
+                },
+                "cmd": {
+                    "type": "string",
+                    "default": "python -m pytest",
+                    "description": "The command that runs tests and generage .coverage file"
+                }
+            }
+        }]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",

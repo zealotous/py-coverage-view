@@ -1,9 +1,10 @@
 'use strict';
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import { exec } from 'child_process';
+// import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { chdir } from 'process';
 import * as vscode from 'vscode';
 import { MODE_COVERED, MODE_MISSING } from './constants';
 
@@ -36,11 +37,9 @@ function getHighlightMode(): string {
     return String(getCfg().get("python.coverageView.highlightMode"));
 }
 
-
-function getPython() {
-    return getCfg().get("python.pythonPath");
+function getCoverageCmd(): string {
+    return String(getCfg().get("python.coveragepy.cmd"));
 }
-
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -410,75 +409,62 @@ function runPytestCov(
         return;
     }
     for (let fldr of folders) {
-        runPytestCovInFolder(outputChannel, statusBar, cache, fldr.uri.fsPath);
+        runPytestCovInFolder(outputChannel, statusBar, cache, fldr);
     }
+}
+
+function createTask(workspaceFolder: vscode.WorkspaceFolder, commandLine: string) {
+    const taskName = "run-pytest";
+    const definition: vscode.TaskDefinition = {
+        type: "shell",
+        task: taskName,
+    }
+    return new vscode.Task(
+        definition,
+        workspaceFolder,
+        taskName,
+        'shell',
+        new vscode.ShellExecution(commandLine),
+    );
 }
 
 function runPytestCovInFolder(
     outputChannel: vscode.OutputChannel,
     statusBar: vscode.StatusBarItem,
     cache: CoverageStatsCache,
-    rootPath: string,
+    workspaceFolder: vscode.WorkspaceFolder,
 ) {
-    const python = getPython();
+    chdir(workspaceFolder.uri.fsPath);
+    const cmd = getCoverageCmd();
+    const task = createTask(workspaceFolder, cmd)
 
-    let cmd = `cd ${rootPath} && ${python} -m pytest --cov=. `;
+    vscode.tasks.executeTask(task);
 
-    exec(cmd, (err, stdout, stderr) => {
-        if (err) {
-            outputChannel.append(stderr);
-            console.log(stderr);
-            updateStatusBar(statusBar, "-", "-", "-");
-            return;
-        }
-        let lines = stdout.split("\n");
-        lines.forEach(line => {
-            let items = line.replace(/\s\s+/g, ' ').split(' ');
-            // length is 5 report contains Missing column when 'terms-missing' is switched on
-            if (items.length >= 4 && items.length <= 5) {
+    vscode.tasks.onDidEndTask(e => {
+        if (e.execution.task == task) {
+            const covJsonFile = "coverage.json"
+            let doUpdate = false;
 
-                let percentCovered = items[3].trim();
-
-                if (percentCovered.endsWith("%")) {
-                    let key = `${rootPath}/${items[0]}`; //the filename
-                    if (key in cache) {
-                        let stats = cache[key];
-                        stats.numLines = items[1];
-                        stats.missedLines = items[2];
-                        stats.percentCovered = percentCovered;
-                    } else if (items[0] === "TOTAL") {
-                        // TODO: report doesn't contain TOTAL if there is only one file
-                        cache["TOTAL"] = new CoverageStats(new Array(0), items[1], items[2], percentCovered);
+            if (fs.existsSync('.coverage')) {
+                // Generate coverage.json if it doen't exist
+                if (fs.existsSync(covJsonFile)) {
+                    if (fs.statSync(covJsonFile).mtime > fs.statSync('.coverage').mtime) {
+                        console.info('%s already exists', covJsonFile);
+                    } else {
+                        // coverage json only if coverage.json older .coverage
+                        doUpdate = true;
+                        console.info('%s exists but outdated', covJsonFile);
                     }
-
                 }
-            }
-        });
-
-        let activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor) {
-            //get TOTAL path if any
-            let total = "-";
-            if ("TOTAL" in cache) {
-                total = cache["TOTAL"].percentCovered;
-            }
-            let unixPath = activeEditor.document.uri.path;
-            let fileStat = cache[unixPath];
-
-            if (fileStat) {
-                if (total !== '-') {
-                    total = `${fileStat.percentCovered} / ${total} (OVERALL)`;
-                } else {
-                    total = fileStat.percentCovered;
+                if (doUpdate) {
+                    console.info("%s doesn't exist. Running coverage json command", covJsonFile)
+                    vscode.tasks.executeTask(createTask(workspaceFolder, 'coverage json --include=*'));
                 }
-                updateStatusBar(statusBar, fileStat.numLines, fileStat.missedLines, total);
             } else {
-                updateStatusBar(statusBar);
+                console.error(".coverage file doesn't exit")
             }
         }
-
     });
-
 }
 
 

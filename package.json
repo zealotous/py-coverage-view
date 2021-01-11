@@ -33,6 +33,11 @@
                     "default": ".coverage",
                     "description": "Coverage.py outputfile (usually .coverage)"
                 },
+                "python.coveragepy.cmd": {
+                    "type": "string",
+                    "default": "python -m pytest",
+                    "description": "The shell command produces coveragepy report"
+                },
                 "python.coverageView.highlight": {
                     "type": "string",
                     "default": "rgba(200,200,200,.35)",

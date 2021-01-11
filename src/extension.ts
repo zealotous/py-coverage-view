@@ -408,8 +408,14 @@ function runPytestCov(
         outputChannel.append("No folders...");
         return;
     }
-    for (let fldr of folders) {
-        runPytestCovInFolder(outputChannel, statusBar, cache, fldr);
+    // TODO: Fix possible side effects
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+        // Run tests only for currently active editor
+        const fldr = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+        if (fldr) {
+            runPytestCovInFolder(outputChannel, statusBar, cache, fldr);
+        }
     }
 }
 

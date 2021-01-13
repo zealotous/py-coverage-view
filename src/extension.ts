@@ -338,6 +338,9 @@ function updateOpenedEditors(cache: CoverageStatsCache, decors: DecorationCache)
         const document: vscode.TextDocument = editor.document;
         const filePath = document.uri.path;
 
+        // TODO: Handle wsl paths
+        // TODO: Handle absolute pathes generated in a docker container or wsl distributions
+        //       Actual for old versions of coverage <=4.5.1
         if (filePath in decors) {
             decors[filePath].dispose();
             delete decors[filePath];

@@ -41,6 +41,12 @@
                     "description": "The shell command produces coveragepy report",
                     "scope": "resource"
                 },
+                "python.coveragepy.run-on-file-change": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "If true, run `python.coveragepy.cmd` automatically on start or a file change",
+                    "scope": "resource"
+                },
                 "python.coverageView.highlight": {
                     "type": "string",
                     "default": "rgba(200,200,200,.35)",

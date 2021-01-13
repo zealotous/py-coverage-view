@@ -38,7 +38,11 @@ function getHighlightMode(): string {
 }
 
 function getCoverageCmd(): string {
-    return String(getCfg().get("python.coveragepy.cmd"));
+    const cfg = getCfg()
+    if (cfg.get("python.coveragepy.run-on-file-change")) {
+        return String(cfg.get("python.coveragepy.cmd"));
+    }
+    return '';
 }
 
 // this method is called when your extension is activated
@@ -442,6 +446,10 @@ function runPytestCovInFolder(
 ) {
     chdir(workspaceFolder.uri.fsPath);
     const cmd = getCoverageCmd();
+    if (!cmd) {
+        console.debug("Auto start disabled or set to empty string");
+        return
+    }
     const task = createTask(workspaceFolder, cmd)
 
     vscode.tasks.executeTask(task);
